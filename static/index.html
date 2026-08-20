@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Vocalis">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/860/860241.png">
+    
+    <title>Vocalis-AI</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Vocalis-AI 🎙️</h1>
+            <div id="connection-status" class="status-indicator offline">Disconnected</div>
+        </header>
+
+        <div id="feedback-card" class="feedback-card hidden">
+            <h3 id="grammar-rule">💡 Pedagogical Note</h3>
+            <p id="grammar-explanation"></p>
+            <div id="vocab-suggestions" class="vocab-tags"></div>
+        </div>
+
+        <main id="chat-container" class="chat-container">
+            <div class="message system-msg">Welcome! Tap the mic to start hands-free practice.</div>
+        </main>
+
+        <footer>
+            <button id="mic-btn" class="mic-btn">
+                <span id="mic-icon">🎙️</span> Start Conversation
+            </button>
+        </footer>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>

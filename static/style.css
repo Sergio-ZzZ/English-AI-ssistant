@@ -1,0 +1,132 @@
+:root {
+    --bg-color: #000000;
+    --surface-color: #1C1C1E; /* Gris oscuro nativo de iOS */
+    --text-primary: #FFFFFF;
+    --text-secondary: #EBEBF5;
+    --accent-blue: #0A84FF; /* Azul nativo de iOS */
+    --accent-red: #FF453A;
+    --success-green: #30D158;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Evita el 'rebote' web al hacer scroll */
+    -webkit-tap-highlight-color: transparent; /* Quita el sombreado azul al tocar botones */
+}
+
+/* Respetando el Notch y la barra inferior del iPhone */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-top: env(safe-area-inset-top, 40px);
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+header {
+    text-align: center;
+    padding: 15px;
+    border-bottom: 1px solid #333;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.status-indicator {
+    font-size: 12px;
+    margin-top: 5px;
+}
+.status-indicator.online { color: var(--success-green); }
+.status-indicator.offline { color: var(--accent-red); }
+
+/* Canal B: Feedback Pedagógico */
+.feedback-card {
+    background-color: var(--surface-color);
+    margin: 15px;
+    padding: 15px;
+    border-radius: 12px;
+    border-left: 4px solid var(--accent-blue);
+    transition: opacity 0.3s ease;
+}
+.feedback-card.hidden {
+    display: none;
+}
+.feedback-card h3 { margin: 0 0 10px 0; font-size: 16px; }
+.feedback-card p { margin: 0 0 10px 0; font-size: 14px; color: var(--text-secondary); }
+
+.vocab-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.vocab-tags span {
+    background-color: rgba(10, 132, 255, 0.2);
+    color: var(--accent-blue);
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+}
+
+/* Canal A: Chat */
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.message {
+    max-width: 80%;
+    padding: 10px 15px;
+    border-radius: 18px;
+    font-size: 15px;
+    line-height: 1.4;
+}
+.system-msg { align-self: center; background-color: var(--surface-color); color: gray; font-size: 13px;}
+.user-msg { align-self: flex-end; background-color: var(--accent-blue); }
+.ai-msg { align-self: flex-start; background-color: var(--surface-color); }
+
+/* Botón de Micrófono Inferior */
+footer {
+    padding: 15px;
+    display: flex;
+    justify-content: center;
+}
+.mic-btn {
+    background-color: var(--accent-blue);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 15px 30px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 4px 15px rgba(10, 132, 255, 0.4);
+    transition: transform 0.1s ease, background-color 0.3s ease;
+}
+.mic-btn:active { transform: scale(0.95); }
+.mic-btn.recording {
+    background-color: var(--accent-red);
+    box-shadow: 0 4px 15px rgba(255, 69, 58, 0.4);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
