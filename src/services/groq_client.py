@@ -7,13 +7,13 @@ from src.models.schemas import PedagogicalFeedback
 from src.core.prompts import get_system_prompt
 
 class GroqService:
+    """
+    Servicio para interactuar con la API de Groq.
+    """
     def __init__(self, api_key: str):
-        """
-        Inicializa el cliente asíncrono de Groq.
-        """
         self.client = AsyncGroq(api_key=api_key)
-        # Aquí definimos el modelo correcto y actual
-        self.model = "llama-3.3-70b-versatile"
+        # Cambiamos al modelo más rápido y estable para WebSockets
+        self.model = "llama-3.1-8b-instant"
 
     async def analyze_input(self, user_message: str) -> Optional[PedagogicalFeedback]:
         """
