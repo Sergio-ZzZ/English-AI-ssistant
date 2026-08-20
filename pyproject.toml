@@ -2,7 +2,7 @@
 name = "vocalis-ai"
 version = "0.1.0"
 description = "Asistente de voz y texto en tiempo real para aprender inglés técnico"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
