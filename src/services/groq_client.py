@@ -13,7 +13,7 @@ class GroqService:
     def __init__(self, api_key: str):
         self.client = AsyncGroq(api_key=api_key)
         # Cambiamos al modelo más rápido y estable para WebSockets
-        self.model = "llama-3.1-8b-instant"
+        self.model = "qwen/qwen3.6-27b"
 
     async def analyze_input(self, user_message: str) -> Optional[PedagogicalFeedback]:
         """
