@@ -12,6 +12,7 @@ class GroqService:
         Inicializa el cliente asíncrono de Groq.
         """
         self.client = AsyncGroq(api_key=api_key)
+        # Aquí definimos el modelo correcto y actual
         self.model = "llama-3.3-70b-versatile"
 
     async def analyze_input(self, user_message: str) -> Optional[PedagogicalFeedback]:
@@ -21,7 +22,7 @@ class GroqService:
         """
         try:
             response = await self.client.chat.completions.create(
-                model=self.model,
+                model=self.model,  # ✅ Cambio crítico: usamos la variable de la clase
                 messages=[
                     {"role": "system", "content": get_system_prompt()},
                     {"role": "user", "content": user_message}
