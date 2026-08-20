@@ -1,61 +1,91 @@
-import logging
+import json
+import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import edge_tts
 
 from src.services.groq_client import GroqService
-from src.services.tts_client import TTSService
 from src.services.transcription_client import TranscriptionService
-from src.core.config import settings  # <-- Importamos la llave de forma segura
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
-
-groq_service = GroqService(api_key=settings.GROQ_API_KEY)
-transcription_service = TranscriptionService(api_key=settings.GROQ_API_KEY)
-tts_service = TTSService()
+VOICE = "en-US-AriaNeural"  # Voz ultra estable
 
 @router.websocket("/ws/chat")
-async def chat_endpoint(websocket: WebSocket):
-    """
-    Endpoint principal para la comunicación en tiempo real.
-    Maneja el audio binario entrante, la transcripción, el razonamiento y el streaming de salida.
-    """
+async def websocket_chat_endpoint(websocket: WebSocket):
     await websocket.accept()
-    logger.info("Cliente conectado al Canal de Chat de Voz.")
+    print("\n🟢 [WebSocket] Cliente conectado.", flush=True)
+
+    api_key = os.getenv("GROQ_API_KEY", "")
+    groq_service = GroqService(api_key=api_key)
+    whisper_service = TranscriptionService(api_key=api_key)
 
     try:
         while True:
-            # 1. Recibimos audio binario crudo desde el micrófono
+            # 1. Recibir audio
             audio_bytes = await websocket.receive_bytes()
-            logger.debug("Audio binario recibido, iniciando transcripción...")
-
-            # 2. Transcripción (Whisper)
-            user_message = await transcription_service.transcribe_audio(audio_bytes)
-            
-            if not user_message:
-                await websocket.send_json({"error": "No se pudo transcribir el audio."})
+            if len(audio_bytes) < 1000:
                 continue
 
-            # 3. El Cerebro (Llama 3): Analizar el texto transcrito
-            feedback = await groq_service.analyze_input(user_message)
+            print(f"\n📥 [Audio] Recibidos {len(audio_bytes)} bytes.", flush=True)
+
+            # 2. Transcripción
+            print("⏳ [Whisper] Transcribiendo...", flush=True)
+            user_text = await whisper_service.transcribe_audio(audio_bytes)
+
+            if not user_text or not user_text.strip():
+                print("⚠️ [Whisper] Audio ininteligible o en blanco.", flush=True)
+                await websocket.send_text(json.dumps({"error": "I couldn't hear you. Try again."}))
+                await websocket.send_text(json.dumps({"type": "end_of_audio"})) # Liberar frontend
+                continue
+
+            print(f"🗣️ [Usuario]: {user_text}", flush=True)
+
+            # 3. LLM Groq
+            print("🧠 [LLM] Pensando...", flush=True)
+            feedback = await groq_service.analyze_input(user_text)
 
             if not feedback:
-                await websocket.send_json({"error": "La IA no pudo procesar el mensaje."})
+                await websocket.send_text(json.dumps({"error": "Failed to analyze input."}))
+                await websocket.send_text(json.dumps({"type": "end_of_audio"}))
                 continue
 
-            # 4. Canal B (Feedback Estructurado): Enviar el JSON a la UI
-            await websocket.send_json(feedback.model_dump())
+            print(f"🤖 [IA]: {feedback.conversational_response}", flush=True)
             
-            # 5. Canal A (La Boca): Streaming asíncrono de audio de vuelta
+            # 4. Enviar JSON al cliente
+            try:
+                await websocket.send_text(feedback.model_dump_json())
+            except Exception as json_err:
+                print(f"❌ [Error JSON]: {json_err}")
+
+            # 5. Generar audio con edge-tts
             text_to_speak = feedback.conversational_response
-            async for audio_chunk in tts_service.stream_audio(text_to_speak):
-                await websocket.send_bytes(audio_chunk)
             
-            # 6. Señal de finalización
-            await websocket.send_json({"type": "end_of_audio"})
+            # --- INICIO DE LOGS DE DEBUGEÓ ---
+            print(f"\n[DEBUG TTS] 1. Texto a sintetizar: '{text_to_speak}'")
+            
+            communicate = edge_tts.Communicate(text=text_to_speak, voice=VOICE)
+            audio_buffer = bytearray()
+            
+            try:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_buffer.extend(chunk["data"])
+                
+                print(f"[DEBUG TTS] 2. Generación exitosa. Tamaño del buffer: {len(audio_buffer)} bytes.")
+                
+                if len(audio_buffer) == 0:
+                    print("[DEBUG TTS] ❌ ERROR CATASTRÓFICO: El buffer de audio está vacío.")
+                else:
+                    await websocket.send_bytes(bytes(audio_buffer))
+                    print(f"[DEBUG TTS] 3. Audio enviado por WebSocket exitosamente.")
+                    
+            except Exception as e:
+                print(f"[DEBUG TTS] ❌ ERROR AL GENERAR AUDIO: {e}")
+            # --- FIN DE LOGS DE DEBUGEÓ ---
+
+            # 6. Notificar fin de audio
+            await websocket.send_text(json.dumps({"type": "end_of_audio"}))
 
     except WebSocketDisconnect:
-        logger.info("El usuario cerró la conexión del micrófono.")
+        print("🔴 [WebSocket] Desconectado.", flush=True)
     except Exception as e:
-        logger.error(f"Fallo crítico en el WebSocket: {e}", exc_info=True)
-        if websocket.client_state.name != "DISCONNECTED":
-            await websocket.close()
+        print(f"❌ [WebSocket Error Crítico]: {e}", flush=True)

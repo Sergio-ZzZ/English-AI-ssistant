@@ -6,36 +6,66 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Vocalis">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/860/860241.png">
-    
     <title>Vocalis-AI</title>
     <link rel="manifest" href="/static/manifest.json">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="app-container">
-        <header>
-            <h1>Vocalis-AI 🎙️</h1>
-            <div id="connection-status" class="status-indicator offline">Disconnected</div>
+        <header class="app-header">
+            <div class="brand">
+                <h1>Vocalis-AI</h1>
+                <span class="subtitle">Technical English Assistant</span>
+            </div>
+            <div id="connection-status" class="status-badge offline">
+                <span class="dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
         </header>
 
-        <div id="feedback-card" class="feedback-card hidden">
-            <h3 id="grammar-rule">💡 Pedagogical Note</h3>
-            <p id="grammar-explanation"></p>
+        <section id="feedback-card" class="feedback-card hidden">
+            <div class="feedback-header">
+                <h3>💡 Grammar & Pedagogy Note</h3>
+                <button id="close-feedback-btn" class="close-btn">&times;</button>
+            </div>
+            <div id="grammar-explanation" class="feedback-body"></div>
             <div id="vocab-suggestions" class="vocab-tags"></div>
-        </div>
+        </section>
 
         <main id="chat-container" class="chat-container">
-            <div class="message system-msg">Welcome! Tap the mic to start hands-free practice.</div>
+            <div class="message system-msg">
+                👋 Tap <strong>"Start Call"</strong> to begin your hands-free English practice session.
+            </div>
         </main>
 
-        <footer>
-            <button id="mic-btn" class="mic-btn">
-                <span id="mic-icon">🎙️</span> Start Conversation
-            </button>
+        <div id="voice-visualizer" class="voice-visualizer hidden">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <span id="call-state-label">Listening...</span>
+        </div>
+
+        <footer class="app-footer">
+            <div id="call-controls" class="call-controls">
+                <button id="start-call-btn" class="btn btn-primary">
+                    <span class="btn-icon">📞</span> Start Call
+                </button>
+
+                <div id="active-call-btns" class="active-call-group hidden">
+                    <button id="pause-call-btn" class="btn btn-warning">
+                        <span id="pause-icon" class="btn-icon">⏸️</span>
+                        <span id="pause-label">Pause</span>
+                    </button>
+                    <button id="end-call-btn" class="btn btn-danger">
+                        <span class="btn-icon">🛑</span> End Call
+                    </button>
+                </div>
+            </div>
         </footer>
     </div>
-    
+
     <script src="/static/app.js"></script>
 </body>
 </html>
