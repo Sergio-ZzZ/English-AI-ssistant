@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/__init__.py
+src/api/__init__.py
+src/core/__init__.py
+src/core/prompts.py
+src/models/__init__.py
+src/models/schemas.py
+src/services/__init__.py
+src/vocalis_ai.egg-info/PKG-INFO
+src/vocalis_ai.egg-info/SOURCES.txt
+src/vocalis_ai.egg-info/dependency_links.txt
+src/vocalis_ai.egg-info/requires.txt
+src/vocalis_ai.egg-info/top_level.txt
