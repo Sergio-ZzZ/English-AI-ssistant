@@ -14,33 +14,39 @@ document.addEventListener("DOMContentLoaded", () => {
     const pauseLabel = document.getElementById('pause-label');
     const pauseIcon = document.getElementById('pause-icon');
     const endBtn = document.getElementById('end-call-btn');
-
     const voiceVisualizer = document.getElementById('voice-visualizer');
     const callStateLabel = document.getElementById('call-state-label');
 
-    // Máquina de Estados
-    let isCallActive = false;
-    let isPaused = false;
-    let isAiSpeaking = false;
-    let hasUserSpoken = false;
+    // Máquina de Estados (FSM)
+    const STATES = {
+        IDLE: 'IDLE',
+        WAITING_SPEECH: 'WAITING_SPEECH',
+        SPEAKING: 'SPEAKING',
+        PROCESSING: 'PROCESSING',
+        AI_TALKING: 'AI_TALKING',
+        PAUSED: 'PAUSED'
+    };
+    let currentState = STATES.IDLE;
 
-    // Conexión y Audio
     let ws = null;
     let mediaRecorder = null;
     let audioChunks = [];
+    
+    // Motor Central de Web Audio API (El corazón de la solución)
     let audioContext = null;
+    let currentAudioSource = null; // Para controlar la voz de la IA
+    
     let analyser = null;
     let microphone = null;
     let stream = null;
     let silenceTimer = null;
     let animationFrameId = null;
+    let hasUserSpokenInTurn = false; 
 
-    // Reproductor global persistente para evitar bloqueos en navegadores móviles
-    const audioPlayer = new Audio();
-
-    function setStatus(text) {
-        if (callStateLabel) callStateLabel.textContent = text;
-        console.log(`[Status] ${text}`);
+    function setAppState(newState, labelText = '') {
+        currentState = newState;
+        console.log(`[FSM] Estado -> ${newState}`);
+        if (callStateLabel && labelText) callStateLabel.textContent = labelText;
     }
 
     function getSupportedMimeType() {
@@ -51,7 +57,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return '';
     }
 
-    // 1. Conexión WebSocket Dinámica
     function connectWebSocket() {
         const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -65,36 +70,40 @@ document.addEventListener("DOMContentLoaded", () => {
         ws.onopen = () => {
             statusBadge.className = 'status-badge online';
             statusText.textContent = 'Online';
-            console.log("[WS] Conectado a:", wsUrl);
         };
 
         ws.onmessage = async (event) => {
-            // A. Recibir Audio Binario de la IA
+            // A. RECIBIR AUDIO (Ahora usamos AudioContext)
             if (event.data instanceof Blob) {
-                // --- LOG DE DEBUGEÓ ---
-                console.log(`[DEBUG WS] 🟢 BLOB RECIBIDO. Tamaño: ${event.data.size} bytes, Tipo MIME: ${event.data.type}`);
-                
-                if (event.data.size === 0) {
-                    console.error("[DEBUG WS] ❌ El Blob de audio llegó vacío (0 bytes).");
-                    return;
-                }
-                
-                playAiVoice(event.data);
+                console.log(`[Audio] Recibido blob de IA: ${event.data.size} bytes`);
+                playAiVoicePro(event.data);
                 return;
             }
 
-            // Caso B: Recibimos JSON
+            // B. RECIBIR JSON
             try {
-                const data = JSON.parse(event.data);
-                if (data.error) {
-                    addMessage('system', `⚠️ ${data.error}`);
-                    if (isCallActive && !isPaused && !isAiSpeaking) startListeningTurn();
-                } else if (data.conversational_response) {
-                    addMessage('ai', data.conversational_response);
-                    updateFeedback(data);
+                const response = JSON.parse(event.data);
+                
+                // FAIL-SAFE: Si el backend dice que terminó pero nunca nos mandó audio
+                if (response.type === "end_of_audio") {
+                    if (currentState === STATES.PROCESSING) {
+                        console.warn("[FSM] El backend terminó pero no reprodujimos audio. Forzando turno.");
+                        startListeningTurn();
+                    }
+                    return;
+                }
+
+                if (response.error) {
+                    addMessageToChat('system', `⚠️ ${response.error}`);
+                    if (currentState === STATES.PROCESSING || currentState === STATES.AI_TALKING) {
+                        startListeningTurn();
+                    }
+                } else if (response.conversational_response) {
+                    addMessageToChat('ai', response.conversational_response);
+                    updateFeedbackCard(response);
                 }
             } catch (e) {
-                console.error("[WS] Error parseando JSON:", e);
+                console.error("Error JSON:", e);
             }
         };
 
@@ -105,216 +114,163 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    // 2. Reproducción de Audio
-    function playAiVoice(blob) {
+    // EL NUEVO REPRODUCTOR PROFESIONAL (Web Audio API)
+    async function playAiVoicePro(blob) {
         setAppState(STATES.AI_TALKING, 'Vocalis is speaking...');
-        stopMicrophone(); 
-
-        const audioUrl = URL.createObjectURL(blob);
-        audioPlayer.src = audioUrl;
-
-        // --- LOGS DE DEBUGEÓ PARA EL REPRODUCTOR ---
-        audioPlayer.onloadeddata = () => console.log("[DEBUG AUDIO] 🎵 Audio cargado en el reproductor correctamente.");
-        audioPlayer.onplay = () => console.log("[DEBUG AUDIO] ▶️ Reproducción iniciada.");
-        
-        audioPlayer.onerror = (e) => {
-            console.error("[DEBUG AUDIO] ❌ Error crítico en el reproductor de audio:", audioPlayer.error);
-            if (currentState !== STATES.PAUSED && currentState !== STATES.IDLE) {
-                startListeningTurn();
-            }
-        };
-
-        audioPlayer.onended = () => {
-            console.log("[DEBUG AUDIO] ⏹️ Reproducción finalizada naturalmente.");
-            URL.revokeObjectURL(audioUrl);
-            if (currentState !== STATES.PAUSED && currentState !== STATES.IDLE) {
-                startListeningTurn();
-            }
-        };
-
-        // Capturar promesas de reproducción
-        audioPlayer.play().catch(e => {
-            console.error("[DEBUG AUDIO] ❌ El navegador BLOQUEÓ la reproducción (Autoplay Policy):", e);
-            if (currentState !== STATES.PAUSED && currentState !== STATES.IDLE) {
-                startListeningTurn();
-            }
-        });
-    }
-
-    // 3. Captura con Detección de Silencio por RMS
-    async function startListeningTurn() {
-        if (!isCallActive || isPaused || isAiSpeaking) return;
-
-        hasUserSpoken = false;
-        setStatus('Listening... (Speak when ready)');
+        stopMicrophone();
 
         try {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // 1. Convertir el Blob en un Buffer que el navegador entienda
+            const arrayBuffer = await blob.arrayBuffer();
+            
+            // 2. Decodificar el audio a la fuerza
+            const decodedAudio = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // 3. Crear una fuente de reproducción
+            currentAudioSource = audioContext.createBufferSource();
+            currentAudioSource.buffer = decodedAudio;
+            currentAudioSource.connect(audioContext.destination);
+
+            // 4. Qué hacer cuando termine de hablar
+            currentAudioSource.onended = () => {
+                console.log("[Audio] Finalizó la voz de la IA con éxito.");
+                currentAudioSource = null;
+                if (currentState === STATES.AI_TALKING) {
+                    startListeningTurn();
+                }
+            };
+
+            // 5. ¡Reproducir!
+            currentAudioSource.start(0);
+
+        } catch (error) {
+            console.error("[Audio] Error CRÍTICO decodificando audio:", error);
+            addMessageToChat('system', '⚠️ Audio format error. Resuming call...');
+            if (currentState === STATES.AI_TALKING) {
+                startListeningTurn();
             }
+        }
+    }
+
+    async function startListeningTurn() {
+        if (currentState === STATES.PAUSED || currentState === STATES.IDLE) return;
+
+        setAppState(STATES.WAITING_SPEECH, 'Listening... (Speak when ready)');
+        hasUserSpokenInTurn = false; 
+
+        try {
+            // Iniciar o reactivar el contexto de audio
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
             if (audioContext.state === 'suspended') await audioContext.resume();
 
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
             const mimeType = getSupportedMimeType();
             mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
             audioChunks = [];
 
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) audioChunks.push(e.data);
-            };
+            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
 
             mediaRecorder.onstop = () => {
-                if (hasUserSpoken && audioChunks.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
-                    const blob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
-                    console.log(`[Mic] Enviando grabación al servidor (${blob.size} bytes)...`);
-                    ws.send(blob);
-                    setStatus('Thinking...');
-                    addMessage('system', '🎙️ Audio sent. Processing response...');
-                } else {
-                    console.log("[Mic] Grabación vacía o no hablada. Reiniciando...");
-                    if (isCallActive && !isPaused && !isAiSpeaking) {
-                        startListeningTurn();
-                    }
+                if (hasUserSpokenInTurn && audioChunks.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(new Blob(audioChunks, { type: mimeType || 'audio/webm' }));
+                    setAppState(STATES.PROCESSING, 'Thinking...');
+                } else if (currentState !== STATES.PAUSED && currentState !== STATES.IDLE) {
+                    startListeningTurn();
                 }
-                cleanupMic();
+                audioChunks = [];
+                stopStreamTracks();
             };
 
-            // Configuración del analizador de volumen RMS
             analyser = audioContext.createAnalyser();
-            analyser.fftSize = 512;
+            analyser.minDecibels = -55;
             microphone = audioContext.createMediaStreamSource(stream);
             microphone.connect(analyser);
 
-            const bufferLength = analyser.fftSize;
-            const dataArray = new Float32Array(bufferLength);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-            function checkAudioLevel() {
-                if (!isCallActive || isPaused || isAiSpeaking || !mediaRecorder || mediaRecorder.state !== 'recording') {
-                    return;
-                }
+            function monitorVoiceActivity() {
+                if (currentState !== STATES.WAITING_SPEECH && currentState !== STATES.SPEAKING) return;
 
-                analyser.getFloatTimeDomainData(dataArray);
-                
-                // Cálculo de Root Mean Square (RMS)
-                let sumSquares = 0.0;
-                for (let i = 0; i < bufferLength; i++) {
-                    sumSquares += dataArray[i] * dataArray[i];
-                }
-                const rms = Math.sqrt(sumSquares / bufferLength);
+                analyser.getByteFrequencyData(dataArray);
+                let isSpeaking = dataArray.some(v => v > 15); // Umbral de sensibilidad
 
-                const SPEECH_THRESHOLD = 0.02; // Sensibilidad de voz
-
-                if (rms > SPEECH_THRESHOLD) {
-                    if (!hasUserSpoken) {
-                        hasUserSpoken = true;
-                        setStatus('Listening to you...');
+                if (isSpeaking) {
+                    if (!hasUserSpokenInTurn) {
+                        hasUserSpokenInTurn = true;
+                        setAppState(STATES.SPEAKING, 'Listening to you...');
                     }
-                    if (silenceTimer) {
-                        clearTimeout(silenceTimer);
-                        silenceTimer = null;
-                    }
+                    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
                 } else {
-                    // Silencio detectado solo después de haber hablado
-                    if (hasUserSpoken && !silenceTimer) {
+                    if (hasUserSpokenInTurn && !silenceTimer) {
                         silenceTimer = setTimeout(() => {
-                            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                                console.log("[VAD] 1.2s de silencio detectado. Deteniendo grabación.");
-                                mediaRecorder.stop();
-                            }
-                        }, 1200);
+                            if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                        }, 1300);
                     }
                 }
-
-                animationFrameId = requestAnimationFrame(checkAudioLevel);
+                animationFrameId = requestAnimationFrame(monitorVoiceActivity);
             }
 
             mediaRecorder.start();
-            checkAudioLevel();
+            monitorVoiceActivity();
 
         } catch (err) {
-            console.error("[Mic Error]", err);
-            addMessage('system', '❌ Error al acceder al micrófono.');
+            console.error("Microphone error:", err);
+            addMessageToChat('system', '❌ Microphone permission denied.');
             endCall();
         }
     }
 
-    function stopRecording() {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-        }
-        cleanupMic();
+    function stopMicrophone() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        stopStreamTracks();
     }
 
-    function cleanupMic() {
-        if (stream) {
-            stream.getTracks().forEach(t => t.stop());
-            stream = null;
-        }
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-        }
-        if (silenceTimer) {
-            clearTimeout(silenceTimer);
-            silenceTimer = null;
-        }
+    function stopStreamTracks() {
+        if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+        if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
     }
 
-    // 4. Controles de Llamada
-    function startCall() {
-        // Desbloqueo de audio para Safari / iOS
-        audioPlayer.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-        audioPlayer.play().catch(() => {});
-
-        isCallActive = true;
-        isPaused = false;
-        isAiSpeaking = false;
+    async function startCall() {
+        // Inicializamos el motor de audio en el primer click del usuario para evitar bloqueos
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') await audioContext.resume();
 
         startBtn.classList.add('hidden');
         activeCallBtns.classList.remove('hidden');
         voiceVisualizer.classList.remove('hidden');
-
-        addMessage('system', '📞 Call started. Speak in English!');
+        
+        addMessageToChat('system', '📞 Call connected. Speak when you are ready!');
         startListeningTurn();
     }
 
     function pauseCall() {
-        isPaused = !isPaused;
-        if (isPaused) {
+        if (currentState !== STATES.PAUSED) {
+            setAppState(STATES.PAUSED, 'Call Paused');
             pauseIcon.textContent = '▶️';
             pauseLabel.textContent = 'Resume';
-            setStatus('Call Paused');
-            stopRecording();
-            audioPlayer.pause();
-            addMessage('system', '⏸️ Call paused.');
+            stopMicrophone();
+            if (currentAudioSource) currentAudioSource.stop(); // Corta a la IA si está hablando
         } else {
             pauseIcon.textContent = '⏸️';
             pauseLabel.textContent = 'Pause';
-            addMessage('system', '▶️ Call resumed.');
             startListeningTurn();
         }
     }
 
     function endCall() {
-        isCallActive = false;
-        isPaused = false;
-        isAiSpeaking = false;
-
-        stopRecording();
-        audioPlayer.pause();
+        setAppState(STATES.IDLE);
+        stopMicrophone();
+        if (currentAudioSource) currentAudioSource.stop();
 
         startBtn.classList.remove('hidden');
         activeCallBtns.classList.add('hidden');
         voiceVisualizer.classList.add('hidden');
-
         pauseIcon.textContent = '⏸️';
         pauseLabel.textContent = 'Pause';
-        addMessage('system', '🛑 Call ended.');
     }
 
-    // Helpers UI
-    function addMessage(sender, text) {
+    function addMessageToChat(sender, text) {
         const div = document.createElement('div');
         div.classList.add('message', `${sender}-msg`);
         div.textContent = text;
@@ -322,26 +278,14 @@ document.addEventListener("DOMContentLoaded", () => {
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    function updateFeedback(data) {
+    function updateFeedbackCard(data) {
         if (data.grammar_corrections && data.grammar_corrections.length > 0) {
             feedbackCard.classList.remove('hidden');
             const c = data.grammar_corrections[0];
             grammarExplanation.innerHTML = `<strong>Mistake:</strong> "${c.original_phrase}"<br><strong>Better:</strong> "${c.corrected_phrase}"<br><em>${c.explanation}</em>`;
-        } else {
-            feedbackCard.classList.add('hidden');
-        }
-
-        if (data.suggested_vocabulary && data.suggested_vocabulary.length > 0) {
-            vocabSuggestions.innerHTML = '';
-            data.suggested_vocabulary.forEach(word => {
-                const span = document.createElement('span');
-                span.textContent = word;
-                vocabSuggestions.appendChild(span);
-            });
         }
     }
 
-    // Listeners
     if (startBtn) startBtn.addEventListener('click', startCall);
     if (pauseBtn) pauseBtn.addEventListener('click', pauseCall);
     if (endBtn) endBtn.addEventListener('click', endCall);
