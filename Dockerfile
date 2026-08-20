@@ -17,5 +17,5 @@ COPY . /app
 # Exponemos el puerto obligatorio para Hugging Face Spaces
 EXPOSE 7860
 
-# Comando para iniciar el servidor (apuntaremos a un archivo main que crearemos luego)
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Comando para iniciar el servidor
+CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "7860"]
