@@ -1,16 +1,10 @@
 import json
-import logging
 from typing import Optional
 from groq import AsyncGroq
 from pydantic import ValidationError
 
 from src.models.schemas import PedagogicalFeedback
 from src.core.prompts import get_system_prompt
-
-# 1. Configuramos el logger profesional para este archivo
-logger = logging.getLogger(__name__)
-# Nivel DEBUG nos mostrará absolutamente todo en consola mientras desarrollamos
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class GroqService:
     def __init__(self, api_key: str):
@@ -19,15 +13,12 @@ class GroqService:
         """
         self.client = AsyncGroq(api_key=api_key)
         self.model = "llama-3.3-70b-versatile"
-        logger.info(f"GroqService inicializado con el modelo: {self.model}")
 
     async def analyze_input(self, user_message: str) -> Optional[PedagogicalFeedback]:
         """
         Envía el mensaje del usuario a Groq, fuerza la salida a JSON 
         y devuelve el modelo validado por Pydantic.
         """
-        logger.debug(f"Analizando nuevo mensaje del usuario: '{user_message}'")
-        
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -35,24 +26,22 @@ class GroqService:
                     {"role": "system", "content": get_system_prompt()},
                     {"role": "user", "content": user_message}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.3,
+                response_format={"type": "json_object"},  # Groq Native JSON mode
+                temperature=0.3, # Baja temperatura para respuestas deterministas
             )
             
             raw_json = response.choices[0].message.content
-            logger.debug(f"Respuesta cruda de Groq recibida: {raw_json}")
             
+            # Pydantic v2 convierte y valida el string directamente en nuestro objeto
             if raw_json:
-                feedback = PedagogicalFeedback.model_validate_json(raw_json)
-                logger.info("Validación de Pydantic exitosa.")
-                return feedback
-            
-            logger.warning("Groq devolvió un string vacío.")
+                return PedagogicalFeedback.model_validate_json(raw_json)
             return None
             
         except ValidationError as e:
-            logger.error(f"Error de validación de Pydantic (El LLM alucinó el formato): {e}")
+            # Si el modelo alucina un formato incorrecto, evitamos que la app explote
+            print(f"[GroqService] Error de validación de Pydantic: {e}")
             return None
         except Exception as e:
-            logger.error(f"Fallo crítico en la conexión con la API de Groq: {e}", exc_info=True)
+            # Fallos de red o de la API de Groq
+            print(f"[GroqService] Error de conexión: {e}")
             return None
